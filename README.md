@@ -1,0 +1,2 @@
+# split_webinspect_web_application_assessment_report_py
+Split a WebInspect Web Application Assessment Report
