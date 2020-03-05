@@ -18,5 +18,5 @@ pdftotext -nopgbrk REPORTNAME.pdf REPORTNAME.txt
 Step 2: Split text version
 
 ```shell
-python3.8 REPORTNAME.txt REPORTNAME.parts/
+python3.8 .../split_webinspect_web_application_assessment_report.py REPORTNAME.txt REPORTNAME.parts/
 ```
