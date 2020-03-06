@@ -24,21 +24,21 @@ def main(argv=sys.argv):
 _APPENDIX_LINE = f"Appendix (Check Descriptions){os.linesep}"
 _RE_SEVERITY = re.compile(r"^(?P<name>Critical|High|Medium|Low) Issues$")
 _RE_VULN_WITH_CAT = re.compile(
-    r"^(?P<category>[^:]+): (?P<name>.+) \( (?P<number>\d+) \)$"
+    r"^(?P<category>[^:]+): (?P<name>.+) \( (?P<vid>\d+) \)$"
 )
-_RE_VULN_WITHOUT_CAT = re.compile(r"^(?P<name>[^:]+) \( (?P<number>\d+) \)$")
+_RE_VULN_WITHOUT_CAT = re.compile(r"^(?P<name>[^:]+) \( (?P<vid>\d+) \)$")
 _RE_ITEM_START = re.compile(r"^Page:$")
 _RE_REQUEST = re.compile(r"^(?P<method>GET|POST) /(?P<section>[^/ ]+)")
 
 
 class Vulnerability:
-    def __init__(self, number, category, name):
-        self.number = number
+    def __init__(self, vid, category, name):
+        self.vid = vid
         self.category = category
         self.name = name
 
     def __str__(self):
-        return ".".join(map(str, [self.number, self.category, self.name]))
+        return ".".join(map(str, [self.vid, self.category, self.name]))
 
 
 class ReportParser:
@@ -128,7 +128,7 @@ class ReportParser:
         if match:
             self._debug(match)
             self._next_vuln = Vulnerability(
-                match.group("number"), cat, match.group("name")
+                match.group("vid"), cat, match.group("name")
             )
             return True
         return False
@@ -220,15 +220,15 @@ class PartsWriter:
     def _increment_item_stats(self, item):
         key = (
             item.severity,
-            item.vulnerability.number,
+            item.vulnerability.vid,
             item.request_method,
             item.request_section,
         )
         if key not in self._stats:
             self._stats[key] = 0
         self._stats[key] += 1
-        if item.vulnerability.number not in self._vulns:
-            self._vulns[item.vulnerability.number] = item.vulnerability
+        if item.vulnerability.vid not in self._vulns:
+            self._vulns[item.vulnerability.vid] = item.vulnerability
 
 
 def _parse_args(argv):
