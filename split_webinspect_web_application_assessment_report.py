@@ -31,7 +31,9 @@ _RE_VULN_WITH_CAT = re.compile(
 )
 _RE_VULN_WITHOUT_CAT = re.compile(r"^(?P<name>[^:]+) \( (?P<vid>\d+) \)$")
 _RE_ITEM_START = re.compile(r"^Page:$")
-_RE_REQUEST = re.compile(r"^(?P<method>GET|POST) /(?P<section>[^/ ]+)")
+_RE_ITEM_REQUEST = re.compile(r"Request:$")
+_RE_ITEM_RESPONSE = re.compile(r"Response:$")
+_RE_REQUEST_METHOD_AND_PATH = re.compile(r"^(?P<method>GET|POST) /(?P<section>[^/ ]+)")
 _RE_REQUEST_METHOD_ONLY = re.compile(r"^(?P<method>GET|POST)$")
 _RE_REQUEST_PATH_ONLY = re.compile(r"^/(?P<section>[^/ ]+)")
 
@@ -64,7 +66,6 @@ class ReportParser:
                     if item:
                         return item
                 else:
-                    self._check_line_request()
                     self._append_line()
         except StopIteration:
             raise
@@ -75,11 +76,9 @@ class ReportParser:
         self._lines = iter(self._stream)
         self._item_number = self._line_number = 0
         self._sev = self._vuln = None
-        self._request_method = self._request_section = None
         self._next_sev = self._next_vuln = None
         self._item_lines = []
         self._end_of_items = False
-        self._state_expecting_request_path_next = False
 
     def _make_item_if_ready(self):
         item = None
@@ -95,15 +94,7 @@ class ReportParser:
 
     def _make_item(self):
         self._item_number += 1
-        item = Item(
-            self._item_number,
-            self._sev,
-            self._vuln,
-            self._request_method,
-            self._request_section,
-            self._item_lines,
-        )
-        self._request_method = self._request_section = None
+        item = Item(self._item_number, self._sev, self._vuln, self._item_lines,)
         self._item_lines = [self._line]
         self._line = None
         return item
@@ -113,28 +104,6 @@ class ReportParser:
         if match:
             self._debug(match)
             return True
-        return False
-
-    def _check_line_request(self):
-        match_method = match_section = None
-        if self._state_expecting_request_path_next:
-            match_section = _RE_REQUEST_PATH_ONLY.match(self._line)
-        self._state_expecting_request_path_next = False
-        if not match_section:
-            match_method = _RE_REQUEST.match(self._line)
-        if not match_method:
-            match_method = _RE_REQUEST_METHOD_ONLY.match(self._line)
-            self._state_expecting_request_path_next = bool(match_method)
-        match = match_method or match_section
-        if match:
-            self._debug(match)
-            if match_method:
-                self._request_method = match_method.group("method")
-            if match_section:
-                self._request_section = urllib.parse.quote(
-                    match_section.group("section"), safe=""
-                )
-        # never start a new item
         return False
 
     def _check_line_vulnerability(self):
@@ -189,20 +158,43 @@ class ReportParser:
 
 class Item:
     def __init__(
-        self,
-        number=None,
-        severity=None,
-        vulnerability=None,
-        request_method=None,
-        request_section=None,
-        lines=None,
+        self, number=None, severity=None, vulnerability=None, lines=None,
     ):
         self.number = _none_or_cast(number, int)
         self.severity = _none_or_cast(severity)
         self.vulnerability = vulnerability
-        self.request_method = _none_or_cast(request_method)
-        self.request_section = _none_or_cast(request_section)
         self.lines = (lines or []).copy()
+        self.request_method = self.request_section = None
+        self._parse_details()
+
+    def _parse_details(self):
+        state = "PRE_START"
+        i = 0
+        while i < len(self.lines):
+            line = self.lines[i]
+            if state == "PRE_START":
+                match = _RE_ITEM_START.match(line)
+                if match:
+                    state = "AFTER_PAGE"
+            elif state == "AFTER_PAGE":
+                match = _RE_ITEM_REQUEST.match(line)
+                if match:
+                    state = "AFTER_REQUEST"
+            elif state == "AFTER_REQUEST":
+                match = _RE_ITEM_RESPONSE.match(line)
+                if match:
+                    state == "SKIP_REST"
+                else:
+                    match = _RE_REQUEST_METHOD_AND_PATH.match(line)
+                    if match:
+                        self.request_method = match.group("method")
+                        self.request_section = urllib.parse.quote(
+                            match.group("section"), safe=""
+                        )
+                        state = "SKIP_REST"
+            elif state == "SKIP_REST":
+                return
+            i += 1
 
     def as_csv_row(self):
         return collections.OrderedDict(
