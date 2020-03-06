@@ -1,4 +1,6 @@
 import argparse
+import collections
+import csv
 import os
 import re
 import sys
@@ -11,6 +13,7 @@ def split_webinspect_web_application_assessment_report(report_stream, partsdir_p
     parser = ReportParser(report_stream)
     for item in parser:
         parts.write_item(item)
+    parts.close()
     return parts.statistics, parts.vulnerabilities
 
 
@@ -170,7 +173,13 @@ class ReportParser:
 
 class Item:
     def __init__(
-        self, number, severity, vulnerability, request_method, request_section, lines,
+        self,
+        number=None,
+        severity=None,
+        vulnerability=None,
+        request_method=None,
+        request_section=None,
+        lines=None,
     ):
         self.number = _none_or_cast(number, int)
         self.severity = _none_or_cast(severity)
@@ -178,6 +187,17 @@ class Item:
         self.request_method = _none_or_cast(request_method)
         self.request_section = _none_or_cast(request_section)
         self.lines = (lines or []).copy()
+
+    def as_csv_row(self):
+        return collections.OrderedDict(
+            ItemNumber=self.number,
+            Severity=self.severity,
+            VulnId=self.vulnerability and self.vulnerability.vid,
+            VulnName=self.vulnerability and self.vulnerability.name,
+            VulnCat=self.vulnerability and self.vulnerability.category,
+            ReqMethod=self.request_method,
+            ReqSection=self.request_section,
+        )
 
 
 def _none_or_cast(x, type_=str):
@@ -194,7 +214,11 @@ class PartsWriter:
         subpath /= str(item.severity)
         subpath /= str(item.vulnerability)
         subpath /= str(f"xx{item.number:06}.txt")
-        self._open_file(item, subpath).writelines(item.lines)
+        out = self._open_file(subpath, item)
+        out.writelines(item.lines)
+        self._close_file_for(item)
+        row = item.as_csv_row()
+        self._csv_items.writerow(row)
 
     @property
     def statistics(self):
@@ -204,18 +228,38 @@ class PartsWriter:
     def vulnerabilities(self):
         return dict(self._vulns)
 
+    def close(self):
+        for target in list(self._files.keys()):
+            self._close_file_for(target)
+
     def __init__(self, partsdir_path):
         self._path = Path(partsdir_path)
         self._path.mkdir(parents=True, exist_ok=True)
         self._stats = {}
         self._vulns = {}
+        self._files = {}
+        self._csv_items = self._open_csv_writer("items", _CSV_FIELDS_ITEMS)
 
-    def _open_file(self, target, name):
+    def _close_file_for(self, target):
+        f = self._files[target]
+        f.close()
+        del self._files[target]
+
+    def _open_file(self, name, target=None):
         path = self._path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         out = open(path, "w")
         print(f"+ {path}")
+        if target:
+            self._files[target] = out
         return out
+
+    def _open_csv_writer(self, name, fieldnames):
+        out = self._open_file(f"{name}.csv")
+        writer = csv.DictWriter(out, fieldnames)
+        self._files[writer] = out
+        writer.writeheader()
+        return writer
 
     def _increment_item_stats(self, item):
         key = (
@@ -229,6 +273,9 @@ class PartsWriter:
         self._stats[key] += 1
         if item.vulnerability.vid not in self._vulns:
             self._vulns[item.vulnerability.vid] = item.vulnerability
+
+
+_CSV_FIELDS_ITEMS = list(Item().as_csv_row().keys())
 
 
 def _parse_args(argv):
