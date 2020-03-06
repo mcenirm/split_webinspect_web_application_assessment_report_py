@@ -58,7 +58,7 @@ class ReportParser:
                 or self._check_line_severity()
                 or self._check_line_end_of_items()
             ):
-                item = self._make_item_if_ready()
+                item = self._make_item_and_advance_if_ready()
                 if item:
                     yield item
             else:
@@ -73,10 +73,8 @@ class ReportParser:
         self._item_lines = []
         self._end_of_items = False
 
-    def _make_item_if_ready(self):
-        item = None
-        if self._item_lines and self._vuln and self._sev:
-            item = self._make_item()
+    def _make_item_and_advance_if_ready(self):
+        item = self._make_item()
         if self._next_vuln:
             self._vuln = self._next_vuln
             self._next_vuln = None
@@ -145,7 +143,7 @@ class ReportParser:
                 len(self._item_lines),
                 self._sev,
                 *extras,
-                file=sys.stdout,
+                file=sys.stderr,
             )
 
 
@@ -158,7 +156,20 @@ class Item:
         self.vulnerability = vulnerability
         self.lines = (lines or []).copy()
         self.request_method = self.request_section = None
-        self._parse_details()
+        if self.severity and self.vulnerability:
+            self._parse_details()
+
+    def is_header(self):
+        return not (self.severity or self.vulnerability)
+
+    def is_severity(self):
+        return bool(self.severity and not self.vulnerability)
+
+    def is_vulnerability(self):
+        return bool(self.severity and self.vulnerability and not self.request_method)
+
+    def is_item(self):
+        return bool(self.severity and self.vulnerability and self.request_method)
 
     def _parse_details(self):
         state = "PRE_START"
@@ -232,7 +243,7 @@ class PartsWriter:
         out = self._open_file(subpath, item)
         out.writelines(item.lines)
         self._close_file_for(item)
-        if item.request_method:
+        if item.is_item():
             row = item.as_csv_row()
             self._csv_items.writerow(row)
 
@@ -280,14 +291,14 @@ class PartsWriter:
     def _increment_item_stats(self, item):
         key = (
             item.severity,
-            item.vulnerability.vid,
+            str(item.vulnerability),
             item.request_method,
             item.request_section,
         )
         if key not in self._stats:
             self._stats[key] = 0
         self._stats[key] += 1
-        if item.vulnerability.vid not in self._vulns:
+        if item.vulnerability and (item.vulnerability.vid not in self._vulns):
             self._vulns[item.vulnerability.vid] = item.vulnerability
 
 
