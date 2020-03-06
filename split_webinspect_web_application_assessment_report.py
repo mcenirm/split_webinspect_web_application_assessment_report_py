@@ -33,9 +33,12 @@ _RE_VULN_WITHOUT_CAT = re.compile(r"^(?P<name>[^:]+) \( (?P<vid>\d+) \)$")
 _RE_ITEM_START = re.compile(r"^Page:$")
 _RE_ITEM_REQUEST = re.compile(r"Request:$")
 _RE_ITEM_RESPONSE = re.compile(r"Response:$")
-_RE_REQUEST_METHOD_AND_PATH = re.compile(r"^(?P<method>GET|POST) /(?P<section>[^/ ]+)")
+_RE_REQUEST_METHOD_AND_PATH = re.compile(
+    r"^(?P<method>GET|POST) /+(?P<section>[^/ ?]*)"
+)
 _RE_REQUEST_METHOD_ONLY = re.compile(r"^(?P<method>GET|POST)$")
-_RE_REQUEST_PATH_ONLY = re.compile(r"^/(?P<section>[^/ ]+)")
+_RE_REQUEST_PATH_ONLY = re.compile(r"^/+(?P<section>[^/ ?]*)")
+_RE_JUST_NUMBERS = re.compile(r"^\d+$")
 
 
 class Vulnerability:
@@ -158,20 +161,45 @@ class Item:
         self.request_method = self.request_section = None
         if self.severity and self.vulnerability:
             self._parse_details()
+        if self.severity:
+            if self.vulnerability:
+                if self.request_method:
+                    self.type_ = "item"
+                else:
+                    self.type_ = "vulnerability"
+            else:
+                self.type_ = "severity"
+        else:
+            self.type_ = "header"
 
     def is_header(self):
-        return not (self.severity or self.vulnerability)
+        return self.type_ == "header"
 
     def is_severity(self):
-        return bool(self.severity and not self.vulnerability)
+        return self.type_ == "severity"
 
     def is_vulnerability(self):
-        return bool(self.severity and self.vulnerability and not self.request_method)
+        return self.type_ == "vulnerability"
 
     def is_item(self):
-        return bool(self.severity and self.vulnerability and self.request_method)
+        return self.type_ == "item"
+
+    def is_pathologically_empty(self):
+        if len(self.lines) != 4:
+            return False
+        if not _RE_ITEM_START.match(self.lines[0]):
+            return False
+        if self.lines[1] != os.linesep:
+            return False
+        if not _RE_JUST_NUMBERS.match(self.lines[2]):
+            return False
+        if self.lines[3] != os.linesep:
+            return False
+        return True
 
     def _parse_details(self):
+        if self.is_pathologically_empty():
+            return
         state = "PRE_START"
         i = 0
         while i < len(self.lines):
@@ -235,6 +263,8 @@ def _none_or_cast(x, type_=str):
 
 class PartsWriter:
     def write_item(self, item):
+        if item.is_pathologically_empty():
+            return
         self._increment_item_stats(item)
         subpath = Path(str(item.request_section) + "." + str(item.request_method))
         subpath /= str(item.severity)
