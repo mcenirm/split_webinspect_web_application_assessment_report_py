@@ -217,8 +217,9 @@ class PartsWriter:
         out = self._open_file(subpath, item)
         out.writelines(item.lines)
         self._close_file_for(item)
-        row = item.as_csv_row()
-        self._csv_items.writerow(row)
+        if item.request_method:
+            row = item.as_csv_row()
+            self._csv_items.writerow(row)
 
     @property
     def statistics(self):
