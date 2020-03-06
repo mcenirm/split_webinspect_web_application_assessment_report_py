@@ -50,26 +50,19 @@ class Vulnerability:
 
 class ReportParser:
     def __iter__(self):
-        return self
-
-    def __next__(self):
-        try:
-            while not self._end_of_items:
-                self._read_next_line()
-                if (
-                    self._check_line_item_start()
-                    or self._check_line_vulnerability()
-                    or self._check_line_severity()
-                    or self._check_line_end_of_items()
-                ):
-                    item = self._make_item_if_ready()
-                    if item:
-                        return item
-                else:
-                    self._append_line()
-        except StopIteration:
-            raise
-        raise StopIteration
+        while not self._end_of_items:
+            self._read_next_line()
+            if (
+                self._check_line_item_start()
+                or self._check_line_vulnerability()
+                or self._check_line_severity()
+                or self._check_line_end_of_items()
+            ):
+                item = self._make_item_if_ready()
+                if item:
+                    yield item
+            else:
+                self._append_line()
 
     def __init__(self, report_stream):
         self._stream = report_stream
