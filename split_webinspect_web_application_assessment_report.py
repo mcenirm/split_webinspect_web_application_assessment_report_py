@@ -32,6 +32,8 @@ _RE_VULN_WITH_CAT = re.compile(
 _RE_VULN_WITHOUT_CAT = re.compile(r"^(?P<name>[^:]+) \( (?P<vid>\d+) \)$")
 _RE_ITEM_START = re.compile(r"^Page:$")
 _RE_REQUEST = re.compile(r"^(?P<method>GET|POST) /(?P<section>[^/ ]+)")
+_RE_REQUEST_METHOD_ONLY = re.compile(r"^(?P<method>GET|POST)$")
+_RE_REQUEST_PATH_ONLY = re.compile(r"^/(?P<section>[^/ ]+)")
 
 
 class Vulnerability:
@@ -77,6 +79,7 @@ class ReportParser:
         self._next_sev = self._next_vuln = None
         self._item_lines = []
         self._end_of_items = False
+        self._state_expecting_request_path_next = False
 
     def _make_item_if_ready(self):
         item = None
@@ -113,11 +116,24 @@ class ReportParser:
         return False
 
     def _check_line_request(self):
-        match = _RE_REQUEST.match(self._line)
+        match_method = match_section = None
+        if self._state_expecting_request_path_next:
+            match_section = _RE_REQUEST_PATH_ONLY.match(self._line)
+        self._state_expecting_request_path_next = False
+        if not match_section:
+            match_method = _RE_REQUEST.match(self._line)
+        if not match_method:
+            match_method = _RE_REQUEST_METHOD_ONLY.match(self._line)
+            self._state_expecting_request_path_next = bool(match_method)
+        match = match_method or match_section
         if match:
             self._debug(match)
-            self._request_method = match.group("method")
-            self._request_section = urllib.parse.quote(match.group("section"), safe="")
+            if match_method:
+                self._request_method = match_method.group("method")
+            if match_section:
+                self._request_section = urllib.parse.quote(
+                    match_section.group("section"), safe=""
+                )
         # never start a new item
         return False
 
