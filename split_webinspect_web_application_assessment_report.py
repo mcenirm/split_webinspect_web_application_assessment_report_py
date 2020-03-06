@@ -187,14 +187,28 @@ class Item:
                 else:
                     match = _RE_REQUEST_METHOD_AND_PATH.match(line)
                     if match:
-                        self.request_method = match.group("method")
-                        self.request_section = urllib.parse.quote(
-                            match.group("section"), safe=""
+                        self._safe_set_request_method_and_section(
+                            match.group("method"), match.group("section")
                         )
                         state = "SKIP_REST"
+                    elif i + 1 < len(self.lines):
+                        match = _RE_REQUEST_METHOD_ONLY.match(line)
+                        if match:
+                            method = match.group("method")
+                            match = _RE_REQUEST_PATH_ONLY.match(self.lines[i + 1])
+                            if match:
+                                self._safe_set_request_method_and_section(
+                                    method, match.group("section")
+                                )
+                                i += 1
+                                state = "SKIP_REST"
             elif state == "SKIP_REST":
                 return
             i += 1
+
+    def _safe_set_request_method_and_section(self, method, section):
+        self.request_method = method
+        self.request_section = urllib.parse.quote(section, safe="")
 
     def as_csv_row(self):
         return collections.OrderedDict(
